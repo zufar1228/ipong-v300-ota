@@ -1,0 +1,8 @@
+# Build Outputs
+.pio/
+.vscode/
+*.pyc
+__pycache__/
+
+# Keep firmware.bin tracked
+!firmware/firmware.bin
