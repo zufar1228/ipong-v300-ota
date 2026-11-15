@@ -47,7 +47,7 @@ Cek sebelum dinyalakan:
 1. `pip install platformio cryptography`
 2. Key tanda tangan sudah dibuat di `keys/ota_private.pem`. **Backup file ini** (mis. password manager / flashdisk). Jika hilang, robot di lapangan hanya bisa di-update lewat USB. Untuk membuat baru: `python tools/ota_release.py keygen`.
 3. Build & flash: `pio run -t upload`, lalu `pio device monitor`.
-4. Hubungkan HP ke WiFi **`natsir'S-ipongv300`** (password: `44444444`). Halaman captive portal muncul otomatis; tekan **Buka di Browser** (atau buka `http://192.168.4.1` langsung di browser). Jika HP menampilkan "Jaringan tidak memiliki akses internet", pilih **Tetap terhubung**.
+4. Hubungkan HP ke WiFi **`natsir'S-ipongv300`** (password: `44444444`). Buka aplikasi iPong (Android) atau `http://192.168.4.1` di browser. Jika HP menampilkan "Jaringan tidak memiliki akses internet", pilih **Tetap terhubung**.
 5. Di kartu "WiFi & Update Firmware" tekan **Pindai WiFi Sekitar**, pilih jaringan, isi password → **Simpan & Tes**. Robot mengetes koneksi lalu memutusnya lagi; koneksi internet hanya dipakai saat update. Setelah tersimpan, form disembunyikan dan diganti status koneksi + tombol **Tes Koneksi** / **Ganti WiFi**. Robot juga mengetes WiFi tersimpan sekali setiap kali menyala.
 
 > Partisi flash (`min_spiffs.csv`) hanya bisa diubah lewat USB. Flash pertama wajib memakai `platformio.ini` di repo ini.
@@ -65,7 +65,6 @@ Catatan:
 
 ## Fitur
 - **AP + STA on-demand** — STA hanya aktif saat tes WiFi / update, agar AP kontrol tetap stabil.
-- **Captive portal** — pop-up login HP hanya menampilkan tombol untuk membuka panel kontrol di browser, plus peringatan bila HP berpindah jaringan otomatis.
 - **Aplikasi Android** — PWA tidak bisa di-install dari `http://192.168.4.1` (browser mewajibkan HTTPS), jadi tersedia APK WebView di `android/`. Aplikasi memaksa koneksi lewat WiFi robot walau tanpa internet, layar tetap menyala, dan menampilkan halaman bantuan bila robot tidak terjangkau. Ikon dibuat ulang dengan `python tools/make_icons.py`.
 
 ## Aplikasi Android (APK)

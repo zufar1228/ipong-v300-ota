@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <DNSServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -16,7 +15,7 @@
 
 // ================= KONFIGURASI VERSI & GITHUB =================
 // Naikkan setiap rilis (format semver X.Y.Z). OTA hanya menerima versi yang LEBIH BARU.
-#define FW_VERSION "1.0.3"
+#define FW_VERSION "1.0.4"
 static const char* VERSION_URL = "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/version.json";
 static const char* AP_SSID = "natsir'S-ipongv300";
 static const char* AP_PASS = "44444444";
@@ -102,7 +101,6 @@ static bool scanBusy = false;
 static QueueHandle_t cmdQueue;
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
-static DNSServer dnsServer;
 static Preferences prefs;
 
 // ================= HELPER PWM (Kompatibel Core 2.x & 3.x) =================
@@ -691,88 +689,6 @@ initWs();
 </html>
 )rawliteral";
 
-// Halaman captive portal: hanya tombol untuk membuka panel kontrol di browser sungguhan.
-static const char PORTAL_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0a1a33">
-<title>iPong V300</title>
-<style>
-:root{--bg:#0a1a33;--ball:#ff8a1f;--ball2:#ffb35c;--mut:#a9bdd8;--line:rgba(255,255,255,.12)}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;color:#f4f7fb;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-background:radial-gradient(900px 500px at 50% -10%,#1d5aa3 0,transparent 60%),linear-gradient(180deg,#12407a 0,var(--bg) 70%)}
-.wrap{max-width:440px;margin:auto;padding:22px 16px 28px;text-align:center}
-.logo{width:84px;height:84px;border-radius:22px;box-shadow:0 10px 26px rgba(0,0,0,.4)}
-h1{margin:14px 0 4px;font-size:22px}
-h1 span{color:var(--ball)}
-.sub{margin:0 0 20px;color:var(--mut);font-size:14px;line-height:1.5}
-.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;border-radius:16px;border:none;
-font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;margin-bottom:10px}
-.pri{background:linear-gradient(135deg,var(--ball2),var(--ball));color:#2a1200;box-shadow:0 10px 24px rgba(255,138,31,.35)}
-.sec{background:rgba(255,255,255,.08);color:#fff;border:1px solid var(--line);font-weight:600;font-size:14px;padding:13px}
-.addr{margin:6px 0 18px;font-size:13px;color:var(--mut)}
-.addr b{color:#fff;font-size:15px;letter-spacing:.3px}
-.warn{text-align:left;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.5);border-radius:16px;padding:14px 16px;
-font-size:13px;line-height:1.6;color:#fde7c0}
-.warn h2{margin:0 0 6px;font-size:14px;color:#fbbf24}
-.warn ol{margin:6px 0 0;padding-left:18px}
-.warn li{margin-bottom:4px}
-#hint{display:none;margin:0 0 12px;font-size:13px;color:#fde7c0;line-height:1.5}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <img class="logo" src="/icon-192.png" alt="">
-  <h1>iPong <span>V300</span></h1>
-  <p class="sub">Anda telah terhubung ke jaringan robot.<br>Silakan buka panel kontrol melalui browser.</p>
-
-  <a id="open" class="btn pri" href="http://192.168.4.1/">Buka di Browser</a>
-  <p id="hint"></p>
-  <button class="btn sec" id="copy" type="button">Salin Alamat</button>
-  <p class="addr">Alamat panel kontrol: <b>http://192.168.4.1</b></p>
-
-  <div class="warn">
-    <h2>Perhatian</h2>
-    Apabila panel kontrol tidak dapat dibuka, mohon periksa kembali koneksi WiFi perangkat Anda.
-    Jaringan robot tidak menyediakan akses internet, sehingga sebagian perangkat dapat memutus koneksi
-    secara otomatis atau beralih ke jaringan WiFi lain maupun data seluler.
-    <ol>
-      <li>Pastikan perangkat masih terhubung ke jaringan <b>natsir'S-ipongv300</b>.</li>
-      <li>Apabila muncul pemberitahuan &ldquo;Jaringan tidak memiliki akses internet&rdquo;, pilih <b>Tetap terhubung</b>.</li>
-      <li>Nonaktifkan sementara data seluler apabila halaman tetap tidak dapat dimuat.</li>
-    </ol>
-  </div>
-</div>
-<script>
-const URL_ = 'http://192.168.4.1/';
-const ua = navigator.userAgent;
-const hint = m => { const h = document.getElementById('hint'); h.innerText = m; h.style.display = 'block'; };
-document.getElementById('open').onclick = e => {
-  if (/Android/i.test(ua)) {
-    e.preventDefault();
-    location.href = 'intent://192.168.4.1/#Intent;scheme=http;action=android.intent.action.VIEW;S.browser_fallback_url=' + encodeURIComponent(URL_) + ';end';
-    setTimeout(() => hint('Apabila browser tidak terbuka, tutup jendela ini, pilih "Tetap terhubung", lalu buka alamat di atas melalui browser.'), 1500);
-  } else if (/iPhone|iPad|iPod/i.test(ua)) {
-    e.preventDefault();
-    hint('Pada iPhone/iPad, ketuk "Batal" di pojok kanan atas, pilih "Gunakan Tanpa Internet", lalu buka alamat di atas melalui Safari.');
-  }
-};
-document.getElementById('copy').onclick = () => {
-  const done = () => hint('Alamat telah disalin. Tempelkan pada kolom alamat browser.');
-  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(URL_).then(done); return; }
-  const t = document.createElement('textarea'); t.value = URL_; document.body.appendChild(t); t.select();
-  try { document.execCommand('copy'); done(); } catch (_) { hint('Silakan salin alamat secara manual: ' + URL_); }
-  t.remove();
-};
-</script>
-</body>
-</html>
-)rawliteral";
-
 static const char MANIFEST_JSON[] PROGMEM = R"rawliteral({
   "name": "iPong V300 Controller",
   "short_name": "iPong",
@@ -1023,7 +939,6 @@ static bool connectStaBlocking() {
   WiFi.begin(staSsid.c_str(), staPass.c_str());
   unsigned long t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < STA_CONNECT_TIMEOUT_MS) {
-    dnsServer.processNextRequest();
     delay(100);
   }
   return WiFi.status() == WL_CONNECTED;
@@ -1366,17 +1281,6 @@ static void markAppValidWhenStable() {
 }
 
 // ================= HTTP HELPERS =================
-static bool isLocalHost(AsyncWebServerRequest* req) {
-  String host = req->host();
-  int colon = host.indexOf(':');
-  if (colon >= 0) host = host.substring(0, colon);
-  return host == WiFi.softAPIP().toString();
-}
-
-static void redirectToPortal(AsyncWebServerRequest* req) {
-  req->redirect("http://" + WiFi.softAPIP().toString() + "/portal");
-}
-
 static void sendIcon(const char* path, const uint8_t* data, size_t len) {
   server.on(path, HTTP_GET, [data, len](AsyncWebServerRequest* req) {
     AsyncWebServerResponse* r = req->beginResponse(200, "image/png", data, len);
@@ -1411,21 +1315,12 @@ void setup() {
   Serial.printf("\n=== iPong V300 v%s ===\nWiFi robot : %s\nPassword   : %s\nAlamat     : http://%s\n",
                 FW_VERSION, AP_SSID, AP_PASS, WiFi.softAPIP().toString().c_str());
 
-  // Captive portal: semua domain diarahkan ke robot, agar HP langsung membuka halaman kontrol.
-  dnsServer.start(53, "*", WiFi.softAPIP());
 
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
-    // Probe captive portal (mis. connectivitycheck.gstatic.com/) diarahkan ke halaman portal.
-    if (!isLocalHost(req)) { redirectToPortal(req); return; }
     AsyncWebServerResponse* r = req->beginResponse(200, "text/html", INDEX_HTML);
     r->addHeader("Cache-Control", "no-cache");
-    req->send(r);
-  });
-  server.on("/portal", HTTP_GET, [](AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* r = req->beginResponse(200, "text/html", PORTAL_HTML);
-    r->addHeader("Cache-Control", "no-store");
     req->send(r);
   });
   server.on("/manifest.json", HTTP_GET, [](AsyncWebServerRequest* req) {
@@ -1441,8 +1336,7 @@ void setup() {
   sendIcon("/icon-mask-512.png", ICON_MASK_512, sizeof(ICON_MASK_512));
   sendIcon("/apple-touch-icon.png", ICON_APPLE_180, sizeof(ICON_APPLE_180));
   sendIcon("/favicon.ico", ICON_192, sizeof(ICON_192));
-  // Semua URL lain (probe Android/iOS/Windows, domain apa pun) diarahkan ke portal.
-  server.onNotFound(redirectToPortal);
+  server.onNotFound([](AsyncWebServerRequest* req) { req->send(404, "text/plain", "Not found"); });
   server.begin();
 
   // Tes WiFi tersimpan sekali saat boot agar status koneksi langsung diketahui.
@@ -1451,7 +1345,6 @@ void setup() {
 }
 
 void loop() {
-  dnsServer.processNextRequest();
   processCommands();
   updateMotors();
   pollWifiTest();
