@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Release signing comes from CI secrets (see .github/workflows/android.yml).
+// Without them (local build), the release APK is signed with the debug key.
+def keystoreFile = System.getenv("KEYSTORE_FILE")
+
+android {
+    namespace 'com.ipong.v300'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.ipong.v300"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile) {
+                storeFile file(keystoreFile)
+                storeType "pkcs12"
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias "ipong"
+                keyPassword System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystoreFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

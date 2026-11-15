@@ -16,7 +16,7 @@
 
 // ================= KONFIGURASI VERSI & GITHUB =================
 // Naikkan setiap rilis (format semver X.Y.Z). OTA hanya menerima versi yang LEBIH BARU.
-#define FW_VERSION "1.0.2"
+#define FW_VERSION "1.0.3"
 static const char* VERSION_URL = "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/version.json";
 static const char* AP_SSID = "natsir'S-ipongv300";
 static const char* AP_PASS = "44444444";
@@ -55,7 +55,7 @@ struct Preset {
 };
 
 // Perintah dari WebSocket (task AsyncTCP) ke loop(). Semua state hanya diubah di loop().
-enum CmdType : uint8_t { CMD_HELLO, CMD_SET, CMD_SAVE, CMD_WIFI, CMD_OTA };
+enum CmdType : uint8_t { CMD_HELLO, CMD_SET, CMD_SAVE, CMD_WIFI, CMD_WTEST, CMD_SCAN, CMD_OTA };
 struct Command {
   CmdType type;
   uint32_t clientId;
@@ -93,6 +93,11 @@ static String lastMsg = "";
 static volatile bool otaBusy = false;
 static bool staTesting = false;
 static unsigned long staTestStart = 0;
+// Status WiFi internet untuk UI. STA hanya tersambung sementara, jadi "OK" = tes terakhir berhasil.
+enum StaState : uint8_t { STA_NONE, STA_UNTESTED, STA_TESTING, STA_OK, STA_FAIL };
+static StaState staState = STA_NONE;
+static int staRssi = 0;
+static bool scanBusy = false;
 
 static QueueHandle_t cmdQueue;
 static AsyncWebServer server(80);
@@ -356,6 +361,28 @@ background:rgba(255,138,31,.12);border:1px solid rgba(255,138,31,.45);color:#ffe
 #inst div{flex:1}
 #inst button{flex:none;border:none;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer;background:var(--ball);color:#2a1200}
 #inst .x{background:transparent;color:var(--mut);padding:8px 4px;font-size:16px}
+.wst{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid var(--line);margin-bottom:10px}
+.wdot{width:12px;height:12px;border-radius:50%;flex:none;background:#64748b}
+.wst.ok .wdot{background:var(--ok);box-shadow:0 0 0 4px rgba(34,197,94,.2)}
+.wst.fail .wdot{background:var(--err);box-shadow:0 0 0 4px rgba(239,68,68,.2)}
+.wst.busy .wdot{background:var(--ball);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.3}}
+.wtx{flex:1;min-width:0}
+.wtx b{display:block;font-size:14px}
+.wtx small{display:block;font-size:12px;color:var(--mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#wActs{margin-bottom:4px}
+#wForm{display:none;margin-top:6px}
+#wForm .inrow{margin-top:2px}
+#scanList{display:grid;gap:6px;margin:8px 0 12px;max-height:260px;overflow-y:auto}
+#scanList:empty{display:none}
+.wnet{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
+background:rgba(0,0,0,.22);color:#fff;font-size:14px;cursor:pointer;text-align:left}
+.wnet.sel{border-color:var(--ball);background:rgba(255,138,31,.12)}
+.wnet span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wnet i{font-style:normal;font-size:11px;color:var(--mut);flex:none}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none}
+.bars u{width:3px;background:rgba(255,255,255,.2);border-radius:1px}
+.bars u.on{background:var(--ok)}
 .foot{text-align:center;font-size:11px;color:var(--mut);opacity:.7;margin-top:6px}
 </style>
 </head>
@@ -426,12 +453,27 @@ background:rgba(255,138,31,.12);border:1px solid rgba(255,138,31,.45);color:#ffe
       <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></div>
       <h2>WiFi &amp; Update Firmware</h2><span id="fwVer" class="badge">v...</span>
     </div>
-    <div class="fld"><label for="wSsid">WiFi internet (hanya untuk update)</label>
-      <input type="text" id="wSsid" placeholder="Nama WiFi" maxlength="32" autocomplete="off"></div>
-    <div class="fld"><label for="wPass">Password WiFi</label>
-      <input type="password" id="wPass" placeholder="Password" maxlength="63"></div>
-    <div class="stack">
-      <button class="btn" onclick="saveWifi()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1"/></svg>Simpan &amp; Tes WiFi</button>
+    <div class="wst" id="wst">
+      <span class="wdot" id="wDot"></span>
+      <div class="wtx"><b id="wTitle">Memuat status...</b><small id="wSub"></small></div>
+    </div>
+    <div class="inrow" id="wActs">
+      <button class="btn" type="button" onclick="testWifi()">Tes Koneksi</button>
+      <button class="btn" type="button" onclick="showWifiForm(true)">Ganti WiFi</button>
+    </div>
+    <div id="wForm">
+      <button class="btn" type="button" id="scanBtn" onclick="scanWifi()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Pindai WiFi Sekitar</button>
+      <div id="scanList"></div>
+      <div class="fld"><label for="wSsid">Nama WiFi internet (hanya untuk update)</label>
+        <input type="text" id="wSsid" placeholder="Nama WiFi" maxlength="32" autocomplete="off"></div>
+      <div class="fld"><label for="wPass">Password WiFi</label>
+        <input type="password" id="wPass" placeholder="Password" maxlength="63"></div>
+      <div class="inrow">
+        <button class="btn" type="button" id="wCancel" onclick="showWifiForm(false)">Batal</button>
+        <button class="btn btn-pri" type="button" onclick="saveWifi()">Simpan &amp; Tes</button>
+      </div>
+    </div>
+    <div class="stack" style="margin-top:12px">
       <button class="btn btn-pri" onclick="startOta()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>Cek &amp; Update Firmware</button>
     </div>
     <div id="otaMsg"></div>
@@ -461,7 +503,7 @@ function initWs(){
     if(d.type === 'init'){
       myId = d.you;
       $('fwVer').innerText = 'v' + d.ver;
-      $('wSsid').value = d.ssid || '';
+      applyWifi(d.wifi);
       window.presets = d.presets;
       renderPresets();
       applyUi(d.active, d.run);
@@ -473,6 +515,10 @@ function initWs(){
       window.presets = d.presets; renderPresets();
     } else if(d.type === 'msg'){
       showMsg(d.msg);
+    } else if(d.type === 'wifi'){
+      applyWifi(d.wifi);
+    } else if(d.type === 'scan'){
+      renderScan(d.list || []);
     }
   };
   ws.onclose = ()=>{ setConn(false); setTimeout(initWs, 1500); };
@@ -549,8 +595,60 @@ function saveP(){
   const d = getForm();
   if(tx({cmd:'save', slot:selSlot, data:d})) showMsg('Menyimpan preset...');
 }
+let wifi = {ssid:'', st:0, rssi:0}, formOpen = false;
+function sigLevel(r){ return r >= -55 ? 4 : r >= -65 ? 3 : r >= -75 ? 2 : 1; }
+function applyWifi(w){
+  if(!w) return;
+  wifi = w;
+  const box = $('wst');
+  const saved = !!w.ssid;
+  const T = {
+    0: ['WiFi internet belum diatur', 'Pilih jaringan agar robot dapat diperbarui.', ''],
+    1: ['Belum dites', w.ssid, ''],
+    2: ['Menghubungkan...', w.ssid, 'busy'],
+    3: ['Koneksi berhasil', w.ssid + (w.rssi ? ' \u00b7 sinyal ' + w.rssi + ' dBm' : '') , 'ok'],
+    4: ['Gagal terhubung', w.ssid + ' \u00b7 periksa nama/password', 'fail']
+  }[w.st] || ['-', '', ''];
+  $('wTitle').innerText = T[0]; $('wSub').innerText = T[1];
+  box.className = 'wst ' + T[2];
+  $('wActs').style.display = saved && !formOpen ? 'flex' : 'none';
+  $('wCancel').style.display = saved ? '' : 'none';
+  if(!saved) showWifiForm(true);
+}
+function showWifiForm(open){
+  formOpen = open;
+  $('wForm').style.display = open ? 'block' : 'none';
+  $('wActs').style.display = wifi.ssid && !open ? 'flex' : 'none';
+  if(open){ $('wSsid').value = wifi.ssid || ''; $('wPass').value = ''; }
+  else $('scanList').innerHTML = '';
+}
+function testWifi(){ if(tx({cmd:'wtest'})) showMsg('Mengetes koneksi WiFi...'); }
+function scanWifi(){
+  if(tx({cmd:'scan'})){ $('scanBtn').disabled = true; $('scanList').innerHTML = ''; setTimeout(()=>$('scanBtn').disabled = false, 8000); }
+}
+function renderScan(list){
+  $('scanBtn').disabled = false;
+  const box = $('scanList'); box.innerHTML = '';
+  list.forEach(n=>{
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'wnet';
+    const bars = document.createElement('span'); bars.className = 'bars'; bars.style.flex = 'none';
+    const lv = sigLevel(n.r);
+    for(let i=1;i<=4;i++){ const u = document.createElement('u'); u.style.height = (i*3+2)+'px'; if(i<=lv) u.className = 'on'; bars.appendChild(u); }
+    const nm = document.createElement('span'); nm.innerText = n.s;
+    const lk = document.createElement('i'); lk.innerText = n.l ? 'Terkunci' : 'Terbuka';
+    b.append(bars, nm, lk);
+    b.onclick = ()=>{
+      document.querySelectorAll('.wnet').forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel'); $('wSsid').value = n.s; $('wPass').value = '';
+      if(n.l) $('wPass').focus();
+    };
+    box.appendChild(b);
+  });
+}
 function saveWifi(){
-  if(tx({cmd:'wifi', ssid:$('wSsid').value, pass:$('wPass').value})) showMsg('Menyimpan & mengetes WiFi...');
+  const ssid = $('wSsid').value.trim();
+  if(!ssid){ showMsg('Nama WiFi wajib diisi.'); return; }
+  if(tx({cmd:'wifi', ssid:ssid, pass:$('wPass').value})){ showMsg('Menyimpan & mengetes WiFi...'); showWifiForm(false); }
 }
 function startOta(){
   if(tx({cmd:'ota'})) showMsg('Memulai update...');
@@ -558,16 +656,17 @@ function startOta(){
 // Tawaran pasang ke layar utama. Prompt bawaan browser hanya muncul di HTTPS;
 // di http://192.168.4.1 ditampilkan petunjuk manual sebagai gantinya.
 let deferredInstall = null;
+const IN_APP = /iPongApp/.test(navigator.userAgent);
 function lsGet(k){ try { return localStorage.getItem(k); } catch(_) { return null; } }
 function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(_) {} }
 function showInstall(){
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  if(standalone || lsGet('instHide')) return;
+  if(standalone || IN_APP || lsGet('instHide')) return;
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   if(!deferredInstall){
     $('instTx').innerText = ios
       ? 'Pasang iPong di layar utama: ketuk tombol Bagikan, lalu pilih "Tambahkan ke Layar Utama".'
-      : 'Pasang iPong di layar utama: buka menu browser (⋮), lalu pilih "Tambahkan ke layar utama".';
+      : 'Untuk pengalaman seperti aplikasi, pasang aplikasi Android iPong (APK) dari halaman Releases GitHub ipong-v300-ota saat HP terhubung ke internet.';
     $('instBtn').style.display = 'none';
   }
   $('inst').style.display = 'flex';
@@ -715,12 +814,33 @@ static void fillPresets(JsonDocument& doc) {
   for (int i = 0; i < NUM_PRESETS; i++) fillPreset(arr.add<JsonObject>(), presets[i]);
 }
 
+static void fillWifi(JsonDocument& doc) {
+  JsonObject w = doc["wifi"].to<JsonObject>();
+  w["ssid"] = staSsid;
+  w["st"] = (uint8_t)staState;
+  w["rssi"] = staRssi;
+}
+
+static void broadcastWifi() {
+  JsonDocument doc;
+  doc["type"] = "wifi";
+  fillWifi(doc);
+  String out;
+  serializeJson(doc, out);
+  ws.textAll(out);
+}
+
+static void setStaState(StaState st) {
+  staState = st;
+  broadcastWifi();
+}
+
 static void sendInit(uint32_t clientId) {
   JsonDocument doc;
   doc["type"] = "init";
   doc["you"] = clientId;
   doc["ver"] = FW_VERSION;
-  doc["ssid"] = staSsid;
+  fillWifi(doc);
   doc["run"] = isRunning;
   doc["msg"] = lastMsg;
   fillPreset(doc["active"].to<JsonObject>(), activeState);
@@ -801,6 +921,10 @@ static void onWsEvent(AsyncWebSocket* srv, AsyncWebSocketClient* client, AwsEven
     c.type = CMD_WIFI;
     strlcpy(c.s1, ssid, sizeof(c.s1));
     strlcpy(c.s2, pass, sizeof(c.s2));
+  } else if (strcmp(cmd, "wtest") == 0) {
+    c.type = CMD_WTEST;
+  } else if (strcmp(cmd, "scan") == 0) {
+    c.type = CMD_SCAN;
   } else if (strcmp(cmd, "ota") == 0) {
     c.type = CMD_OTA;
   } else {
@@ -818,10 +942,13 @@ static void onWsEvent(AsyncWebSocket* srv, AsyncWebSocketClient* client, AwsEven
 // Saat STA tersambung, AP ikut pindah ke channel router dan HP bisa terputus sebentar.
 // Karena itu STA hanya dinyalakan sementara, bukan terus-menerus.
 static void startWifiTest() {
+  if (staSsid.isEmpty()) { setStaState(STA_NONE); return; }
+  if (scanBusy) { broadcastMsg("Pemindaian WiFi sedang berjalan. Silakan coba lagi sebentar."); return; }
   WiFi.disconnect(false);
   WiFi.begin(staSsid.c_str(), staPass.c_str());
   staTesting = true;
   staTestStart = millis();
+  setStaState(STA_TESTING);
   broadcastMsg("Mencoba terhubung ke \"" + staSsid + "\"... (HP mungkin terputus sebentar)");
 }
 
@@ -829,14 +956,65 @@ static void pollWifiTest() {
   if (!staTesting) return;
   if (WiFi.status() == WL_CONNECTED) {
     String ip = WiFi.localIP().toString();
+    staRssi = WiFi.RSSI();
     WiFi.disconnect(false);
     staTesting = false;
+    setStaState(STA_OK);
     broadcastMsg("WiFi OK (IP " + ip + "). Robot akan tersambung otomatis saat update.");
   } else if (millis() - staTestStart > STA_CONNECT_TIMEOUT_MS) {
     WiFi.disconnect(false);
     staTesting = false;
+    setStaState(STA_FAIL);
     broadcastMsg("Gagal terhubung ke \"" + staSsid + "\". Cek nama & password WiFi.");
   }
+}
+
+// Pindai WiFi sekitar (async). AP tetap aktif, tetapi HP bisa tertunda sejenak saat radio berpindah channel.
+static void startScan() {
+  if (scanBusy) return;
+  if (staTesting) { broadcastMsg("Tes WiFi sedang berjalan. Silakan pindai setelah selesai."); return; }
+  WiFi.scanDelete();
+  if (WiFi.scanNetworks(true, false, false, 300) == WIFI_SCAN_FAILED) {
+    broadcastMsg("Pemindaian WiFi gagal dimulai.");
+    return;
+  }
+  scanBusy = true;
+  broadcastMsg("Memindai jaringan WiFi di sekitar...");
+}
+
+static void pollScan() {
+  if (!scanBusy) return;
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) return;
+  scanBusy = false;
+  JsonDocument doc;
+  doc["type"] = "scan";
+  JsonArray arr = doc["list"].to<JsonArray>();
+  if (n > 0) {
+    // Urutkan berdasarkan sinyal, buang SSID kosong/duplikat, maksimal 20 entri.
+    int idx[64];
+    int m = min(n, 64);
+    for (int i = 0; i < m; i++) idx[i] = i;
+    for (int i = 0; i < m; i++)
+      for (int j = i + 1; j < m; j++)
+        if (WiFi.RSSI(idx[j]) > WiFi.RSSI(idx[i])) { int t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
+    for (int i = 0; i < m && arr.size() < 20; i++) {
+      String ssid = WiFi.SSID(idx[i]);
+      if (ssid.isEmpty() || ssid == AP_SSID) continue;
+      bool dup = false;
+      for (JsonObject o : arr) if (ssid == (const char*)o["s"]) { dup = true; break; }
+      if (dup) continue;
+      JsonObject o = arr.add<JsonObject>();
+      o["s"] = ssid;
+      o["r"] = WiFi.RSSI(idx[i]);
+      o["l"] = WiFi.encryptionType(idx[i]) != WIFI_AUTH_OPEN;
+    }
+  }
+  WiFi.scanDelete();
+  String out;
+  serializeJson(doc, out);
+  ws.textAll(out);
+  broadcastMsg(arr.size() ? "Pilih jaringan WiFi dari daftar." : "Tidak ada jaringan WiFi yang ditemukan.");
 }
 
 static bool connectStaBlocking() {
@@ -974,7 +1152,12 @@ static String downloadAndFlash(WiFiClientSecure& client, const char* url, size_t
 static String doGitHubOta() {
   if (staSsid.isEmpty()) return "Gagal: WiFi internet belum diatur.";
   broadcastMsg("Menghubungkan ke \"" + staSsid + "\"... (HP mungkin terputus sebentar)");
-  if (!connectStaBlocking()) return "Gagal: tidak bisa terhubung ke WiFi internet.";
+  if (!connectStaBlocking()) {
+    setStaState(STA_FAIL);
+    return "Gagal: tidak bisa terhubung ke WiFi internet.";
+  }
+  staRssi = WiFi.RSSI();
+  setStaState(STA_OK);
 
   // Kanal TLS tidak diverifikasi (sertifikat GitHub bisa berganti sewaktu-waktu).
   // Keaslian firmware dijamin oleh tanda tangan ECDSA P-256 yang dicek sebelum firmware diaktifkan.
@@ -1020,6 +1203,7 @@ static void runOta() {
   setRunning(false);  // Wajib matikan semua motor sebelum flashing
   broadcastState(0);
   staTesting = false;
+  if (scanBusy) { WiFi.scanDelete(); scanBusy = false; }
 
   String result = doGitHubOta();  // hanya kembali jika gagal / tidak ada update
   broadcastMsg(result);
@@ -1060,6 +1244,12 @@ static void processCommands() {
         prefs.putString("ssid", staSsid);
         prefs.putString("pass", staPass);
         startWifiTest();
+        break;
+      case CMD_WTEST:
+        startWifiTest();
+        break;
+      case CMD_SCAN:
+        startScan();
         break;
       case CMD_OTA:
         runOta();
@@ -1254,6 +1444,10 @@ void setup() {
   // Semua URL lain (probe Android/iOS/Windows, domain apa pun) diarahkan ke portal.
   server.onNotFound(redirectToPortal);
   server.begin();
+
+  // Tes WiFi tersimpan sekali saat boot agar status koneksi langsung diketahui.
+  staState = staSsid.isEmpty() ? STA_NONE : STA_UNTESTED;
+  if (!staSsid.isEmpty()) startWifiTest();
 }
 
 void loop() {
@@ -1261,6 +1455,7 @@ void loop() {
   processCommands();
   updateMotors();
   pollWifiTest();
+  pollScan();
   markAppValidWhenStable();
 
   static unsigned long lastCleanup = 0;

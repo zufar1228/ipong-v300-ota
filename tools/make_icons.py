@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate the PWA / home-screen icons and embed them as C arrays in src/web_icons.h.
+"""Generate the app icons: PWA icons embedded as C arrays in src/web_icons.h,
+plus the Android launcher icons in android/app/src/main/res/mipmap-*/.
 
 Usage: python tools/make_icons.py   (requires: pip install pillow)
 """
@@ -10,6 +11,8 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "src" / "web_icons.h"
+ANDROID_RES = ROOT / "android" / "app" / "src" / "main" / "res"
+ANDROID_SIZES = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 SS = 4  # supersampling for smooth edges
 
 
@@ -72,6 +75,11 @@ def main():
         parts.append(c_array(name, data))
     OUT.write_text("\n".join(parts), encoding="utf-8")
     print(", ".join(f"{k}={len(v)}B" for k, v in icons.items()))
+    for dpi, px in ANDROID_SIZES.items():
+        d = ANDROID_RES / f"mipmap-{dpi}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "ic_launcher.png").write_bytes(draw_icon(px, False))
+    print("Android launcher icons written")
 
 
 if __name__ == "__main__":
