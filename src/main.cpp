@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
@@ -15,7 +16,7 @@
 
 // ================= KONFIGURASI VERSI & GITHUB =================
 // Naikkan setiap rilis (format semver X.Y.Z). OTA hanya menerima versi yang LEBIH BARU.
-#define FW_VERSION "1.0.4"
+#define FW_VERSION "1.0.5"
 static const char* VERSION_URL = "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/version.json";
 static const char* AP_SSID = "natsir'S-ipongv300";
 static const char* AP_PASS = "44444444";
@@ -54,7 +55,7 @@ struct Preset {
 };
 
 // Perintah dari WebSocket (task AsyncTCP) ke loop(). Semua state hanya diubah di loop().
-enum CmdType : uint8_t { CMD_HELLO, CMD_SET, CMD_SAVE, CMD_WIFI, CMD_WTEST, CMD_SCAN, CMD_OTA };
+enum CmdType : uint8_t { CMD_HELLO, CMD_SET, CMD_SAVE, CMD_WIFI, CMD_WTEST, CMD_SCAN, CMD_HOME, CMD_OTA };
 struct Command {
   CmdType type;
   uint32_t clientId;
@@ -97,6 +98,13 @@ enum StaState : uint8_t { STA_NONE, STA_UNTESTED, STA_TESTING, STA_OK, STA_FAIL 
 static StaState staState = STA_NONE;
 static int staRssi = 0;
 static bool scanBusy = false;
+// Mode WiFi Rumah: STA tetap tersambung ke WiFi tersimpan agar panel bisa dibuka lewat jaringan rumah.
+// Jika router tidak ada (latihan di luar), percobaan ulang dibatasi agar AP tidak terus terganggu.
+static bool homeMode = false;
+static uint8_t homeRetries = 0;
+static unsigned long homeNextTry = 0;
+static const uint8_t HOME_MAX_RETRIES = 5;
+static volatile bool staDropped = false;  // diset dari event WiFi, diproses di loop()
 
 static QueueHandle_t cmdQueue;
 static AsyncWebServer server(80);
@@ -192,6 +200,7 @@ static void loadStorage() {
   prefs.begin("ipong", false);
   staSsid = prefs.getString("ssid", "");
   staPass = prefs.getString("pass", "");
+  homeMode = prefs.getBool("home", false);
 
   const Preset defaults[NUM_PRESETS] = {
     {"1. Warmup Top",  140,   0, 100, 130, 1, 1200},
@@ -381,6 +390,15 @@ background:rgba(0,0,0,.22);color:#fff;font-size:14px;cursor:pointer;text-align:l
 .bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none}
 .bars u{width:3px;background:rgba(255,255,255,.2);border-radius:1px}
 .bars u.on{background:var(--ok)}
+.tgl{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:rgba(0,0,0,.18);border:1px solid var(--line);margin-bottom:10px;cursor:pointer}
+.tgl div{flex:1;min-width:0}
+.tgl b{display:block;font-size:14px}
+.tgl small{display:block;font-size:12px;color:var(--mut);margin-top:2px;line-height:1.45}
+.tgl input{display:none}
+.sw{position:relative;width:46px;height:26px;border-radius:99px;background:rgba(255,255,255,.15);flex:none;transition:background .2s}
+.sw:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s}
+.tgl input:checked+.sw{background:var(--ok)}
+.tgl input:checked+.sw:after{transform:translateX(20px)}
 .foot{text-align:center;font-size:11px;color:var(--mut);opacity:.7;margin-top:6px}
 </style>
 </head>
@@ -455,6 +473,10 @@ background:rgba(0,0,0,.22);color:#fff;font-size:14px;cursor:pointer;text-align:l
       <span class="wdot" id="wDot"></span>
       <div class="wtx"><b id="wTitle">Memuat status...</b><small id="wSub"></small></div>
     </div>
+    <label class="tgl" id="homeRow">
+      <div><b>Mode WiFi Rumah</b><small id="homeSub">Robot tetap tersambung ke WiFi ini, sehingga panel dapat dibuka tanpa berpindah dari WiFi rumah.</small></div>
+      <input type="checkbox" id="homeTgl" onchange="setHome(this.checked)"><span class="sw"></span>
+    </label>
     <div class="inrow" id="wActs">
       <button class="btn" type="button" onclick="testWifi()">Tes Koneksi</button>
       <button class="btn" type="button" onclick="showWifiForm(true)">Ganti WiFi</button>
@@ -604,13 +626,18 @@ function applyWifi(w){
     0: ['WiFi internet belum diatur', 'Pilih jaringan agar robot dapat diperbarui.', ''],
     1: ['Belum dites', w.ssid, ''],
     2: ['Menghubungkan...', w.ssid, 'busy'],
-    3: ['Koneksi berhasil', w.ssid + (w.rssi ? ' \u00b7 sinyal ' + w.rssi + ' dBm' : '') , 'ok'],
+    3: [w.home ? 'Tersambung' : 'Koneksi berhasil', w.ssid + (w.ip ? ' \u00b7 ' + w.ip : '') + (w.rssi ? ' \u00b7 ' + w.rssi + ' dBm' : ''), 'ok'],
     4: ['Gagal terhubung', w.ssid + ' \u00b7 periksa nama/password', 'fail']
   }[w.st] || ['-', '', ''];
   $('wTitle').innerText = T[0]; $('wSub').innerText = T[1];
   box.className = 'wst ' + T[2];
   $('wActs').style.display = saved && !formOpen ? 'flex' : 'none';
   $('wCancel').style.display = saved ? '' : 'none';
+  $('homeRow').style.display = saved ? 'flex' : 'none';
+  $('homeTgl').checked = !!w.home;
+  $('homeSub').innerText = w.home && w.ip
+    ? 'Aktif. Saat HP terhubung ke WiFi rumah, buka http://' + w.ip + ' atau aplikasi iPong.'
+    : 'Robot tetap tersambung ke WiFi ini, sehingga panel dapat dibuka tanpa berpindah dari WiFi rumah.';
   if(!saved) showWifiForm(true);
 }
 function showWifiForm(open){
@@ -619,6 +646,10 @@ function showWifiForm(open){
   $('wActs').style.display = wifi.ssid && !open ? 'flex' : 'none';
   if(open){ $('wSsid').value = wifi.ssid || ''; $('wPass').value = ''; }
   else $('scanList').innerHTML = '';
+}
+function setHome(on){
+  if(!tx({cmd:'home', on:on})){ $('homeTgl').checked = !on; return; }
+  showMsg(on ? 'Mengaktifkan Mode WiFi Rumah...' : 'Mematikan Mode WiFi Rumah...');
 }
 function testWifi(){ if(tx({cmd:'wtest'})) showMsg('Mengetes koneksi WiFi...'); }
 function scanWifi(){
@@ -735,6 +766,8 @@ static void fillWifi(JsonDocument& doc) {
   w["ssid"] = staSsid;
   w["st"] = (uint8_t)staState;
   w["rssi"] = staRssi;
+  w["home"] = homeMode;
+  if (homeMode && WiFi.status() == WL_CONNECTED) w["ip"] = WiFi.localIP().toString();
 }
 
 static void broadcastWifi() {
@@ -841,6 +874,9 @@ static void onWsEvent(AsyncWebSocket* srv, AsyncWebSocketClient* client, AwsEven
     c.type = CMD_WTEST;
   } else if (strcmp(cmd, "scan") == 0) {
     c.type = CMD_SCAN;
+  } else if (strcmp(cmd, "home") == 0) {
+    c.type = CMD_HOME;
+    c.run = doc["on"] | false;
   } else if (strcmp(cmd, "ota") == 0) {
     c.type = CMD_OTA;
   } else {
@@ -854,9 +890,10 @@ static void onWsEvent(AsyncWebSocket* srv, AsyncWebSocketClient* client, AwsEven
   xQueueSend(cmdQueue, &c, 0);  // antrean penuh => perintah dibuang (slider akan mengirim ulang)
 }
 
-// ================= WIFI STA (hanya aktif saat tes / OTA) =================
-// Saat STA tersambung, AP ikut pindah ke channel router dan HP bisa terputus sebentar.
-// Karena itu STA hanya dinyalakan sementara, bukan terus-menerus.
+// ================= WIFI STA =================
+// Mode normal: STA hanya aktif saat tes / OTA. Saat STA tersambung, AP ikut pindah ke channel router
+// dan HP bisa terputus sebentar, jadi STA tidak dinyalakan terus-menerus.
+// Mode WiFi Rumah: STA tetap tersambung (pindah channel hanya sekali).
 static void startWifiTest() {
   if (staSsid.isEmpty()) { setStaState(STA_NONE); return; }
   if (scanBusy) { broadcastMsg("Pemindaian WiFi sedang berjalan. Silakan coba lagi sebentar."); return; }
@@ -873,15 +910,59 @@ static void pollWifiTest() {
   if (WiFi.status() == WL_CONNECTED) {
     String ip = WiFi.localIP().toString();
     staRssi = WiFi.RSSI();
-    WiFi.disconnect(false);
     staTesting = false;
-    setStaState(STA_OK);
-    broadcastMsg("WiFi OK (IP " + ip + "). Robot akan tersambung otomatis saat update.");
+    staDropped = false;
+    homeRetries = 0;
+    if (homeMode) {
+      setStaState(STA_OK);
+      broadcastMsg("Tersambung ke \"" + staSsid + "\". Panel juga dapat dibuka di http://" + ip + " atau http://ipong.local");
+    } else {
+      WiFi.disconnect(false);
+      setStaState(STA_OK);
+      broadcastMsg("WiFi OK (IP " + ip + "). Robot akan tersambung otomatis saat update.");
+    }
   } else if (millis() - staTestStart > STA_CONNECT_TIMEOUT_MS) {
     WiFi.disconnect(false);
     staTesting = false;
+    staDropped = false;
     setStaState(STA_FAIL);
+    if (homeMode && homeRetries < HOME_MAX_RETRIES) {
+      homeNextTry = millis() + 15000UL * (1UL << homeRetries);  // 15s, 30s, 60s, 120s, 240s
+      homeRetries++;
+    }
     broadcastMsg("Gagal terhubung ke \"" + staSsid + "\". Cek nama & password WiFi.");
+  }
+}
+
+// Mode WiFi Rumah: sambung ulang saat terputus, dengan batas percobaan.
+static void pollHomeWifi() {
+  if (!homeMode || staSsid.isEmpty() || staTesting || scanBusy || otaBusy) return;
+  if (staDropped) {
+    staDropped = false;
+    if (WiFi.status() != WL_CONNECTED) {
+      homeRetries = 0;
+      homeNextTry = millis() + 3000;
+      setStaState(STA_FAIL);
+    }
+  }
+  if (WiFi.status() == WL_CONNECTED || homeNextTry == 0) return;
+  if ((long)(millis() - homeNextTry) < 0) return;
+  homeNextTry = 0;
+  startWifiTest();
+}
+
+static void setHomeMode(bool on) {
+  homeMode = on;
+  prefs.putBool("home", on);
+  homeRetries = 0;
+  homeNextTry = 0;
+  if (on) {
+    if (staSsid.isEmpty()) broadcastMsg("Simpan WiFi rumah terlebih dahulu.");
+    else startWifiTest();
+  } else {
+    if (!staTesting) WiFi.disconnect(false);
+    broadcastWifi();
+    broadcastMsg("Mode WiFi Rumah dimatikan. Robot hanya tersambung ke WiFi saat update.");
   }
 }
 
@@ -1122,7 +1203,7 @@ static void runOta() {
 
   String result = doGitHubOta();  // hanya kembali jika gagal / tidak ada update
   broadcastMsg(result);
-  WiFi.disconnect(false);
+  if (!homeMode) WiFi.disconnect(false);
 
   // Buang perintah kontrol yang sempat masuk antrean; HELLO tetap dilayani.
   Command c;
@@ -1165,6 +1246,9 @@ static void processCommands() {
         break;
       case CMD_SCAN:
         startScan();
+        break;
+      case CMD_HOME:
+        setHomeMode(c.run);
         break;
       case CMD_OTA:
         runOta();
@@ -1339,6 +1423,14 @@ void setup() {
   server.onNotFound([](AsyncWebServerRequest* req) { req->send(404, "text/plain", "Not found"); });
   server.begin();
 
+  // mDNS: http://ipong.local + layanan _ipong._tcp untuk pencarian otomatis oleh aplikasi Android.
+  if (MDNS.begin("ipong")) {
+    MDNS.addService("http", "tcp", 80);
+    MDNS.addService("ipong", "tcp", 80);
+  }
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) { staDropped = true; },
+               ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+
   // Tes WiFi tersimpan sekali saat boot agar status koneksi langsung diketahui.
   staState = staSsid.isEmpty() ? STA_NONE : STA_UNTESTED;
   if (!staSsid.isEmpty()) startWifiTest();
@@ -1348,6 +1440,7 @@ void loop() {
   processCommands();
   updateMotors();
   pollWifiTest();
+  pollHomeWifi();
   pollScan();
   markAppValidWhenStable();
 

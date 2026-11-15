@@ -65,6 +65,7 @@ Catatan:
 
 ## Fitur
 - **AP + STA on-demand** — STA hanya aktif saat tes WiFi / update, agar AP kontrol tetap stabil.
+- **Mode WiFi Rumah** — robot tetap tersambung ke WiFi tersimpan, sehingga panel bisa dibuka dari WiFi rumah (`http://<IP robot>` atau `http://ipong.local`) tanpa HP berpindah jaringan. WiFi robot tetap aktif untuk latihan di luar. Jika router tidak ditemukan, robot mencoba ulang maksimal 5 kali (15 detik s.d. 4 menit) lalu berhenti sampai tombol **Tes Koneksi** ditekan. Perhatian: semua perangkat di WiFi rumah dapat membuka panel.
 - **Aplikasi Android** — PWA tidak bisa di-install dari `http://192.168.4.1` (browser mewajibkan HTTPS), jadi tersedia APK WebView di `android/`. Aplikasi memaksa koneksi lewat WiFi robot walau tanpa internet, layar tetap menyala, dan menampilkan halaman bantuan bila robot tidak terjangkau. Ikon dibuat ulang dengan `python tools/make_icons.py`.
 
 ## Aplikasi Android (APK)
@@ -72,6 +73,7 @@ Catatan:
 - Unduh APK dari halaman Releases saat HP terhubung internet → pasang (izinkan "sumber tidak dikenal").
 - Versi baru: naikkan `versionCode` dan `versionName` di `android/app/build.gradle`, lalu push.
 - Keystore penanda tangan ada di `keys/android-release.p12` (password di `keys/android-release.password`) dan juga tersimpan sebagai secret GitHub `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PASSWORD`. **Backup** keduanya: tanpa keystore yang sama, APK baru tidak bisa meng-update aplikasi yang sudah terpasang (harus uninstall dulu).
+- Urutan sambungan aplikasi: (1) WiFi robot yang sudah tersambung, (2) robot di WiFi rumah (Mode WiFi Rumah, dicari via mDNS `_ipong._tcp`), (3) Android 10+ menyambung sendiri ke `natsir'S-ipongv300` setelah dialog persetujuan. Selama aplikasi terbuka, Android tidak memindahkan HP ke WiFi lain; saat aplikasi ditutup, HP kembali ke WiFi rumah. Auto-connect WiFi rumah tidak perlu dimatikan.
 - Hanya Android. Di iPhone, buka `http://192.168.4.1` lewat Safari.
 - **Soft-Start PWM** — naik bertahap; feeder baru naik setelah roda mencapai kecepatan target.
 - **Gear Protection** — jeda 80ms saat motor osilasi berbalik arah.
