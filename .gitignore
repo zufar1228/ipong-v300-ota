@@ -6,3 +6,7 @@ __pycache__/
 
 # Keep firmware.bin tracked
 !firmware/firmware.bin
+
+# OTA signing private key - NEVER commit
+keys/
+*.pem

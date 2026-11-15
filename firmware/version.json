@@ -1,4 +1,7 @@
 {
-  "version": "1.0.0",
-  "url": "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/firmware.bin"
+  "version": "1.0.1",
+  "url": "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/firmware.bin",
+  "size": 1070016,
+  "sha256": "e01d53e74c888464ac12e66c8c40427c4080f61687227232a983386cda5587e0",
+  "sig": "304502200c943ff7156a0010a4b3878340ab977286c35d2138f44ec83f0a7cb15ef22fda022100a7e90735d61ced6814654a71ccb4cd43fafa11a233ee7625c4a1750bed4b7063"
 }

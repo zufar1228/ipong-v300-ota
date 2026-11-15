@@ -1,8 +1,7 @@
-PLACEHOLDER - Ganti file ini dengan firmware.bin hasil build PlatformIO.
+PLACEHOLDER - firmware.bin ditulis oleh tools/ota_release.py.
 
-Langkah:
-1. Build project di PlatformIO
-2. Ambil file dari: .pio/build/esp32doit-devkit-v1/firmware.bin
-3. Timpa file ini dengan firmware.bin tersebut
-4. Update version di firmware/version.json
-5. git add . && git commit -m "Update firmware vX.X.X" && git push
+Langkah rilis:
+1. Naikkan FW_VERSION di src/main.cpp
+2. pio run
+3. python tools/ota_release.py release
+4. git add firmware/ src/ && git commit -m "Release vX.Y.Z" && git push
