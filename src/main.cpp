@@ -16,7 +16,7 @@
 
 // ================= KONFIGURASI VERSI & GITHUB =================
 // Naikkan setiap rilis (format semver X.Y.Z). OTA hanya menerima versi yang LEBIH BARU.
-#define FW_VERSION "1.0.5"
+#define FW_VERSION "1.0.6"
 static const char* VERSION_URL = "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/version.json";
 static const char* AP_SSID = "natsir'S-ipongv300";
 static const char* AP_PASS = "44444444";
@@ -266,23 +266,24 @@ linear-gradient(180deg,var(--tbl) 0,var(--bg) 70%);background-attachment:fixed}
 
 /* Header: meja + net + bola memantul */
 .hero{position:relative;border-radius:20px;overflow:hidden;padding:16px 16px 14px;margin-bottom:14px;
-background:linear-gradient(160deg,#1a5bb0,#0f3b74);border:2px solid rgba(255,255,255,.85);
+background:linear-gradient(160deg,#0d4a96,#082a57);border:2px solid rgba(255,255,255,.7);
 box-shadow:0 10px 30px rgba(0,0,0,.35)}
-.hero:before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(255,255,255,.55)}
+.hero:before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(255,255,255,.22)}
+.hero:after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(4,16,36,.55) 0,rgba(4,16,36,.2) 65%,rgba(4,16,36,0) 100%)}
 .hero .net{position:absolute;top:0;bottom:0;left:50%;width:4px;margin-left:-2px;
-background:repeating-linear-gradient(0deg,rgba(255,255,255,.9) 0 2px,transparent 2px 6px);opacity:.55}
+background:repeating-linear-gradient(0deg,rgba(255,255,255,.9) 0 2px,transparent 2px 6px);opacity:.28}
 .hero .ballfly{position:absolute;width:14px;height:14px;border-radius:50%;top:60%;left:8%;
 background:radial-gradient(circle at 35% 30%,#fff3 0,var(--ball2) 30%,var(--ball) 70%);
 box-shadow:0 4px 8px rgba(0,0,0,.35);animation:rally 2.4s cubic-bezier(.45,.05,.55,.95) infinite}
 @keyframes rally{0%{left:8%;top:62%}25%{top:12%}50%{left:86%;top:62%}75%{top:12%}100%{left:8%;top:62%}}
-.top{position:relative;display:flex;align-items:center;gap:12px;z-index:1}
+.top{position:relative;display:flex;align-items:center;gap:12px;z-index:2}
 .logo{width:46px;height:46px;flex:none;filter:drop-shadow(0 3px 5px rgba(0,0,0,.4))}
 .ttl{flex:1;min-width:0}
-.ttl h1{margin:0;font-size:20px;letter-spacing:.3px;font-weight:800}
-.ttl h1 span{color:var(--ball)}
-.ttl p{margin:2px 0 0;font-size:12px;color:#d6e4f7;opacity:.85}
+.ttl h1{margin:0;font-size:22px;letter-spacing:.3px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.55)}
+.ttl h1 span{color:#ff9d3d}
+.ttl p{margin:3px 0 0;font-size:12.5px;font-weight:500;color:#eaf2ff;text-shadow:0 1px 4px rgba(0,0,0,.55)}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 10px;border-radius:99px;
-background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.18);white-space:nowrap}
+background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);color:#fff;white-space:nowrap}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--err);box-shadow:0 0 0 3px rgba(239,68,68,.25)}
 .chip.on .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(34,197,94,.25)}
 
@@ -380,7 +381,8 @@ background:rgba(255,138,31,.12);border:1px solid rgba(255,138,31,.45);color:#ffe
 #wActs{margin-bottom:4px}
 #wForm{display:none;margin-top:6px}
 #wForm .inrow{margin-top:2px}
-#scanList{display:grid;gap:6px;margin:8px 0 12px;max-height:260px;overflow-y:auto}
+#scanBtn{margin-bottom:16px}
+#scanList{display:grid;gap:6px;margin:-6px 0 16px;max-height:260px;overflow-y:auto}
 #scanList:empty{display:none}
 .wnet{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
 background:rgba(0,0,0,.22);color:#fff;font-size:14px;cursor:pointer;text-align:left}
