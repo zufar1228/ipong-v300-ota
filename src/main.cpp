@@ -12,10 +12,11 @@
 #include <mbedtls/md.h>
 #include <mbedtls/pk.h>
 #include "ota_pubkey.h"
+#include "web_icons.h"
 
 // ================= KONFIGURASI VERSI & GITHUB =================
 // Naikkan setiap rilis (format semver X.Y.Z). OTA hanya menerima versi yang LEBIH BARU.
-#define FW_VERSION "1.0.1"
+#define FW_VERSION "1.0.2"
 static const char* VERSION_URL = "https://raw.githubusercontent.com/zufar1228/ipong-v300-ota/main/firmware/version.json";
 static const char* AP_SSID = "natsir'S-ipongv300";
 static const char* AP_PASS = "44444444";
@@ -31,7 +32,7 @@ static const char* AP_PASS = "44444444";
 #define PWM_RES  8     // 0 - 255
 
 // ================= BATASAN =================
-static const uint8_t  NUM_PRESETS            = 5;
+static const uint8_t  NUM_PRESETS            = 10;
 static const uint8_t  PRESET_LAYOUT_VER      = 1;     // Naikkan jika struct Preset berubah
 static const uint16_t OSC_TIME_MIN           = 400;
 static const uint16_t OSC_TIME_MAX           = 3000;
@@ -194,7 +195,12 @@ static void loadStorage() {
     {"2. Heavy Back",    0, 185,  90, 120, 1, 1400},
     {"3. Fast Drill",  180,  40, 150, 170, 2, 1000},
     {"4. Forehand",    160,   0, 120,   0, 0, 1000},
-    {"5. Custom",      120, 120, 110, 140, 1, 1100}
+    {"5. Custom",      120, 120, 110, 140, 1, 1100},
+    {"6. Push Block",  110,  30, 130,   0, 0, 1000},
+    {"7. Loop Drive",  200,   0, 110, 140, 1, 1300},
+    {"8. Chop Back",     0, 160,  80, 110, 1, 1500},
+    {"9. Random Mix",  150,  60, 120, 160, 2, 1100},
+    {"10. Custom",     120, 120, 110, 140, 1, 1100}
   };
 
   bool layoutOk = prefs.getUChar("pver", 0) == PRESET_LAYOUT_VER;
@@ -230,6 +236,12 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#0a1a33">
 <title>iPong V300</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="iPong">
 <style>
 :root{--bg:#0a1a33;--tbl:#12407a;--tbl2:#0e3263;--card:rgba(13,34,66,.82);--line:rgba(255,255,255,.10);
 --txt:#f4f7fb;--mut:#9fb3cf;--ball:#ff8a1f;--ball2:#ffb35c;--ok:#22c55e;--err:#ef4444;--red:#e23a3a}
@@ -263,7 +275,7 @@ background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.18);white-space:no
 .chip.on .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(34,197,94,.25)}
 
 /* Banner terputus */
-#conn{display:none;margin-bottom:12px;padding:10px 12px;border-radius:12px;font-size:12px;
+#conn{display:none;margin-bottom:12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.5;
 background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.45);color:#fecaca;text-align:center}
 
 /* Tombol power */
@@ -338,6 +350,12 @@ font-size:14px;font-weight:600;cursor:pointer;transition:transform .1s,backgroun
 background:#0b1f3d;border:1px solid rgba(255,138,31,.5);color:#fff;font-size:13px;padding:10px 16px;border-radius:12px;
 box-shadow:0 10px 30px rgba(0,0,0,.45);transition:all .25s;z-index:9}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+#inst{display:none;align-items:center;gap:10px;margin-bottom:14px;padding:12px 14px;border-radius:14px;font-size:12px;line-height:1.5;
+background:rgba(255,138,31,.12);border:1px solid rgba(255,138,31,.45);color:#ffe2c4}
+#inst img{width:34px;height:34px;border-radius:9px;flex:none}
+#inst div{flex:1}
+#inst button{flex:none;border:none;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer;background:var(--ball);color:#2a1200}
+#inst .x{background:transparent;color:var(--mut);padding:8px 4px;font-size:16px}
 .foot{text-align:center;font-size:11px;color:var(--mut);opacity:.7;margin-top:6px}
 </style>
 </head>
@@ -357,7 +375,9 @@ box-shadow:0 10px 30px rgba(0,0,0,.45);transition:all .25s;z-index:9}
     </div>
   </div>
 
-  <div id="conn">Terputus dari robot, menyambung ulang...</div>
+  <div id="conn"><b>Koneksi ke robot terputus.</b> Sistem sedang mencoba menyambung kembali. Mohon pastikan perangkat Anda masih terhubung ke jaringan <b>natsir'S-ipongv300</b> dan tidak beralih secara otomatis ke jaringan WiFi lain atau data seluler.</div>
+
+  <div id="inst"><img src="/icon-192.png" alt=""><div id="instTx">Pasang iPong di layar utama agar dapat dibuka seperti aplikasi.</div><button id="instBtn" type="button">Pasang</button><button class="x" id="instX" type="button" aria-label="Tutup">&times;</button></div>
 
   <button id="btnPower" class="power start" onclick="toggleRun()"><span class="pball"></span><span id="pwTx">START ROBOT</span></button>
 
@@ -535,11 +555,148 @@ function saveWifi(){
 function startOta(){
   if(tx({cmd:'ota'})) showMsg('Memulai update...');
 }
+// Tawaran pasang ke layar utama. Prompt bawaan browser hanya muncul di HTTPS;
+// di http://192.168.4.1 ditampilkan petunjuk manual sebagai gantinya.
+let deferredInstall = null;
+function lsGet(k){ try { return localStorage.getItem(k); } catch(_) { return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(_) {} }
+function showInstall(){
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if(standalone || lsGet('instHide')) return;
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(!deferredInstall){
+    $('instTx').innerText = ios
+      ? 'Pasang iPong di layar utama: ketuk tombol Bagikan, lalu pilih "Tambahkan ke Layar Utama".'
+      : 'Pasang iPong di layar utama: buka menu browser (⋮), lalu pilih "Tambahkan ke layar utama".';
+    $('instBtn').style.display = 'none';
+  }
+  $('inst').style.display = 'flex';
+}
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault(); deferredInstall = e;
+  $('instTx').innerText = 'Pasang iPong di layar utama agar dapat dibuka seperti aplikasi.';
+  $('instBtn').style.display = ''; showInstall();
+});
+$('instBtn').onclick = async ()=>{
+  if(!deferredInstall) return;
+  deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null;
+  $('inst').style.display = 'none';
+};
+$('instX').onclick = ()=>{ lsSet('instHide','1'); $('inst').style.display = 'none'; };
+if('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+setTimeout(showInstall, 1500);
 updLabels();
 initWs();
 </script>
 </body>
 </html>
+)rawliteral";
+
+// Halaman captive portal: hanya tombol untuk membuka panel kontrol di browser sungguhan.
+static const char PORTAL_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a1a33">
+<title>iPong V300</title>
+<style>
+:root{--bg:#0a1a33;--ball:#ff8a1f;--ball2:#ffb35c;--mut:#a9bdd8;--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:#f4f7fb;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+background:radial-gradient(900px 500px at 50% -10%,#1d5aa3 0,transparent 60%),linear-gradient(180deg,#12407a 0,var(--bg) 70%)}
+.wrap{max-width:440px;margin:auto;padding:22px 16px 28px;text-align:center}
+.logo{width:84px;height:84px;border-radius:22px;box-shadow:0 10px 26px rgba(0,0,0,.4)}
+h1{margin:14px 0 4px;font-size:22px}
+h1 span{color:var(--ball)}
+.sub{margin:0 0 20px;color:var(--mut);font-size:14px;line-height:1.5}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;border-radius:16px;border:none;
+font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;margin-bottom:10px}
+.pri{background:linear-gradient(135deg,var(--ball2),var(--ball));color:#2a1200;box-shadow:0 10px 24px rgba(255,138,31,.35)}
+.sec{background:rgba(255,255,255,.08);color:#fff;border:1px solid var(--line);font-weight:600;font-size:14px;padding:13px}
+.addr{margin:6px 0 18px;font-size:13px;color:var(--mut)}
+.addr b{color:#fff;font-size:15px;letter-spacing:.3px}
+.warn{text-align:left;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.5);border-radius:16px;padding:14px 16px;
+font-size:13px;line-height:1.6;color:#fde7c0}
+.warn h2{margin:0 0 6px;font-size:14px;color:#fbbf24}
+.warn ol{margin:6px 0 0;padding-left:18px}
+.warn li{margin-bottom:4px}
+#hint{display:none;margin:0 0 12px;font-size:13px;color:#fde7c0;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <img class="logo" src="/icon-192.png" alt="">
+  <h1>iPong <span>V300</span></h1>
+  <p class="sub">Anda telah terhubung ke jaringan robot.<br>Silakan buka panel kontrol melalui browser.</p>
+
+  <a id="open" class="btn pri" href="http://192.168.4.1/">Buka di Browser</a>
+  <p id="hint"></p>
+  <button class="btn sec" id="copy" type="button">Salin Alamat</button>
+  <p class="addr">Alamat panel kontrol: <b>http://192.168.4.1</b></p>
+
+  <div class="warn">
+    <h2>Perhatian</h2>
+    Apabila panel kontrol tidak dapat dibuka, mohon periksa kembali koneksi WiFi perangkat Anda.
+    Jaringan robot tidak menyediakan akses internet, sehingga sebagian perangkat dapat memutus koneksi
+    secara otomatis atau beralih ke jaringan WiFi lain maupun data seluler.
+    <ol>
+      <li>Pastikan perangkat masih terhubung ke jaringan <b>natsir'S-ipongv300</b>.</li>
+      <li>Apabila muncul pemberitahuan &ldquo;Jaringan tidak memiliki akses internet&rdquo;, pilih <b>Tetap terhubung</b>.</li>
+      <li>Nonaktifkan sementara data seluler apabila halaman tetap tidak dapat dimuat.</li>
+    </ol>
+  </div>
+</div>
+<script>
+const URL_ = 'http://192.168.4.1/';
+const ua = navigator.userAgent;
+const hint = m => { const h = document.getElementById('hint'); h.innerText = m; h.style.display = 'block'; };
+document.getElementById('open').onclick = e => {
+  if (/Android/i.test(ua)) {
+    e.preventDefault();
+    location.href = 'intent://192.168.4.1/#Intent;scheme=http;action=android.intent.action.VIEW;S.browser_fallback_url=' + encodeURIComponent(URL_) + ';end';
+    setTimeout(() => hint('Apabila browser tidak terbuka, tutup jendela ini, pilih "Tetap terhubung", lalu buka alamat di atas melalui browser.'), 1500);
+  } else if (/iPhone|iPad|iPod/i.test(ua)) {
+    e.preventDefault();
+    hint('Pada iPhone/iPad, ketuk "Batal" di pojok kanan atas, pilih "Gunakan Tanpa Internet", lalu buka alamat di atas melalui Safari.');
+  }
+};
+document.getElementById('copy').onclick = () => {
+  const done = () => hint('Alamat telah disalin. Tempelkan pada kolom alamat browser.');
+  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(URL_).then(done); return; }
+  const t = document.createElement('textarea'); t.value = URL_; document.body.appendChild(t); t.select();
+  try { document.execCommand('copy'); done(); } catch (_) { hint('Silakan salin alamat secara manual: ' + URL_); }
+  t.remove();
+};
+</script>
+</body>
+</html>
+)rawliteral";
+
+static const char MANIFEST_JSON[] PROGMEM = R"rawliteral({
+  "name": "iPong V300 Controller",
+  "short_name": "iPong",
+  "description": "Panel kontrol robot tenis meja iPong V300",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1a33",
+  "theme_color": "#0a1a33",
+  "lang": "id",
+  "icons": [
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "/icon-mask-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+})rawliteral";
+
+// Service worker minimal (network-only). Hanya terdaftar jika halaman dibuka lewat HTTPS / WebView.
+static const char SW_JS[] PROGMEM = R"rawliteral(self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', () => {});
 )rawliteral";
 
 // ================= PESAN KE CLIENT (hanya dipanggil dari loop) =================
@@ -1018,6 +1175,26 @@ static void markAppValidWhenStable() {
   }
 }
 
+// ================= HTTP HELPERS =================
+static bool isLocalHost(AsyncWebServerRequest* req) {
+  String host = req->host();
+  int colon = host.indexOf(':');
+  if (colon >= 0) host = host.substring(0, colon);
+  return host == WiFi.softAPIP().toString();
+}
+
+static void redirectToPortal(AsyncWebServerRequest* req) {
+  req->redirect("http://" + WiFi.softAPIP().toString() + "/portal");
+}
+
+static void sendIcon(const char* path, const uint8_t* data, size_t len) {
+  server.on(path, HTTP_GET, [data, len](AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse(200, "image/png", data, len);
+    r->addHeader("Cache-Control", "max-age=604800");
+    req->send(r);
+  });
+}
+
 // ================= SETUP & LOOP =================
 void setup() {
   Serial.begin(115200);
@@ -1050,11 +1227,32 @@ void setup() {
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
-    req->send(200, "text/html", INDEX_HTML);
+    // Probe captive portal (mis. connectivitycheck.gstatic.com/) diarahkan ke halaman portal.
+    if (!isLocalHost(req)) { redirectToPortal(req); return; }
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html", INDEX_HTML);
+    r->addHeader("Cache-Control", "no-cache");
+    req->send(r);
   });
-  server.onNotFound([](AsyncWebServerRequest* req) {
-    req->redirect("http://" + WiFi.softAPIP().toString() + "/");
+  server.on("/portal", HTTP_GET, [](AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html", PORTAL_HTML);
+    r->addHeader("Cache-Control", "no-store");
+    req->send(r);
   });
+  server.on("/manifest.json", HTTP_GET, [](AsyncWebServerRequest* req) {
+    req->send(200, "application/manifest+json", MANIFEST_JSON);
+  });
+  server.on("/sw.js", HTTP_GET, [](AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse(200, "application/javascript", SW_JS);
+    r->addHeader("Cache-Control", "no-cache");
+    req->send(r);
+  });
+  sendIcon("/icon-192.png", ICON_192, sizeof(ICON_192));
+  sendIcon("/icon-512.png", ICON_512, sizeof(ICON_512));
+  sendIcon("/icon-mask-512.png", ICON_MASK_512, sizeof(ICON_MASK_512));
+  sendIcon("/apple-touch-icon.png", ICON_APPLE_180, sizeof(ICON_APPLE_180));
+  sendIcon("/favicon.ico", ICON_192, sizeof(ICON_192));
+  // Semua URL lain (probe Android/iOS/Windows, domain apa pun) diarahkan ke portal.
+  server.onNotFound(redirectToPortal);
   server.begin();
 }
 

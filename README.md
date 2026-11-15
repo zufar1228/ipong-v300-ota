@@ -8,9 +8,11 @@ Robot tenis meja otomatis berbasis ESP32 dengan kontrol via web + GitHub OTA ber
 ipong-v300-ota/
 ├── src/
 │   ├── main.cpp          ← Kode firmware lengkap
-│   └── ota_pubkey.h      ← Public key verifikasi OTA (hasil keygen, aman di-commit)
+│   ├── ota_pubkey.h      ← Public key verifikasi OTA (hasil keygen, aman di-commit)
+│   └── web_icons.h       ← Ikon PWA (hasil tools/make_icons.py)
 ├── tools/
-│   └── ota_release.py    ← Tanda tangan firmware + tulis version.json
+│   ├── ota_release.py    ← Tanda tangan firmware + tulis version.json
+│   └── make_icons.py     ← Generate ikon PWA ke src/web_icons.h
 ├── firmware/
 │   ├── version.json      ← Metadata versi + sha256 + tanda tangan (dibaca ESP32 saat cek OTA)
 │   └── firmware.bin      ← Binary hasil build (ditulis oleh ota_release.py)
@@ -43,7 +45,7 @@ Cek sebelum dinyalakan:
 1. `pip install platformio cryptography`
 2. Key tanda tangan sudah dibuat di `keys/ota_private.pem`. **Backup file ini** (mis. password manager / flashdisk). Jika hilang, robot di lapangan hanya bisa di-update lewat USB. Untuk membuat baru: `python tools/ota_release.py keygen`.
 3. Build & flash: `pio run -t upload`, lalu `pio device monitor`.
-4. Hubungkan HP ke WiFi **`natsir'S-ipongv300`** (password: `44444444`). Halaman kontrol terbuka otomatis (captive portal), atau buka `192.168.4.1`.
+4. Hubungkan HP ke WiFi **`natsir'S-ipongv300`** (password: `44444444`). Halaman captive portal muncul otomatis; tekan **Buka di Browser** (atau buka `http://192.168.4.1` langsung di browser). Jika HP menampilkan "Jaringan tidak memiliki akses internet", pilih **Tetap terhubung**.
 5. Isi WiFi internet di kartu "WiFi & GitHub OTA" → **Simpan & Tes WiFi**. Robot mengetes koneksi lalu memutusnya lagi; koneksi internet hanya dipakai saat update.
 
 > Partisi flash (`min_spiffs.csv`) hanya bisa diubah lewat USB. Flash pertama wajib memakai `platformio.ini` di repo ini.
@@ -61,9 +63,10 @@ Catatan:
 
 ## Fitur
 - **AP + STA on-demand** — STA hanya aktif saat tes WiFi / update, agar AP kontrol tetap stabil.
-- **Captive portal** — HP langsung membuka halaman kontrol saat tersambung ke WiFi robot.
+- **Captive portal** — pop-up login HP hanya menampilkan tombol untuk membuka panel kontrol di browser, plus peringatan bila HP berpindah jaringan otomatis.
+- **Pasang ke layar utama** — manifest + ikon tersedia. Prompt install otomatis browser hanya muncul di HTTPS, jadi di `http://192.168.4.1` halaman menampilkan petunjuk manual (menu browser → "Tambahkan ke layar utama"). Ikon dibuat ulang dengan `python tools/make_icons.py`.
 - **Soft-Start PWM** — naik bertahap; feeder baru naik setelah roda mencapai kecepatan target.
 - **Gear Protection** — jeda 80ms saat motor osilasi berbalik arah.
 - **Osilasi terbatas** — posisi diestimasi dari waktu gerak; mode Sweep & Random tidak drift ke satu sisi. (Tanpa sensor posisi, estimasi bisa meleset jika motor tidak simetris; limit switch disarankan.)
-- **5 Slot Preset** — tersimpan permanen di NVS, sinkron ke semua HP yang tersambung.
+- **10 Slot Preset** — tersimpan permanen di NVS, sinkron ke semua HP yang tersambung.
 - **Safe OTA** — semua motor dimatikan, perintah kontrol diblokir selama update; firmware dicek ukuran, SHA256, dan tanda tangan ECDSA P-256 sebelum diaktifkan.
